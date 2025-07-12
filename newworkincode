@@ -1,0 +1,142 @@
+#define AXLE_SENSOR_PIN 2
+#define HEIGHT_SENSOR_COUNT 10
+#define AXLE_TIMEOUT_MS 3000
+
+const int heightSensorPins[HEIGHT_SENSOR_COUNT] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+const int heightValues[HEIGHT_SENSOR_COUNT]     = {1400, 1520, 1650, 1780, 1910, 2030, 2400, 2600, 2800, 3000};
+
+volatile bool newAxleDetected = false;
+volatile int axleCount = 0;
+
+unsigned long lastAxleTime = 0;
+bool detectionInProgress = false;
+bool cooldownActive = false;
+
+void countAxle() {
+  static unsigned long lastTrigger = 0;
+  unsigned long now = millis();
+
+  if (now - lastTrigger > 50) {
+    if (digitalRead(AXLE_SENSOR_PIN) == HIGH) {
+      axleCount++;
+      newAxleDetected = true;
+      lastAxleTime = now;
+    }
+  }
+  lastTrigger = now;
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(AXLE_SENSOR_PIN, INPUT);  // Better stability
+
+  attachInterrupt(digitalPinToInterrupt(AXLE_SENSOR_PIN), countAxle, RISING);
+
+  for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+    pinMode(heightSensorPins[i], INPUT);  // Avoid floating pins
+  }
+
+  Serial.println("🚦 System Ready");
+}
+
+void loop() {
+  // Check if any height sensor is triggered
+  bool heightTriggered = false;
+  for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+    if (digitalRead(heightSensorPins[i]) == HIGH) {
+      heightTriggered = true;
+      break;
+    }
+  }
+
+  // Start detection if axle or height sensor is triggered
+  if (!detectionInProgress && !cooldownActive && (newAxleDetected || heightTriggered)) {
+    Serial.print("🟡 Triggered by: ");
+    if (newAxleDetected) Serial.print("Axle ");
+    if (heightTriggered) Serial.print("Height ");
+    Serial.println();
+    
+    Serial.println("🔁 Starting detection...");
+    detectionInProgress = true;
+    newAxleDetected = false;
+    lastAxleTime = millis();
+  }
+
+  if (detectionInProgress) {
+    bool sensorTriggered[HEIGHT_SENSOR_COUNT] = {false};
+    Serial.println("📡 Monitoring sensors...");
+    unsigned long detectionStart = millis();
+
+    while (millis() - lastAxleTime < AXLE_TIMEOUT_MS) {
+      delay(50);  // Stability
+
+      // Read height sensors one by one
+      if (digitalRead(heightSensorPins[0]) == HIGH) sensorTriggered[0] = true;
+      if (digitalRead(heightSensorPins[1]) == HIGH) sensorTriggered[1] = true;
+      if (digitalRead(heightSensorPins[2]) == HIGH) sensorTriggered[2] = true;
+      if (digitalRead(heightSensorPins[3]) == HIGH) sensorTriggered[3] = true;
+      if (digitalRead(heightSensorPins[4]) == HIGH) sensorTriggered[4] = true;
+      if (digitalRead(heightSensorPins[5]) == HIGH) sensorTriggered[5] = true;
+      if (digitalRead(heightSensorPins[6]) == HIGH) sensorTriggered[6] = true;
+      if (digitalRead(heightSensorPins[7]) == HIGH) sensorTriggered[7] = true;
+      if (digitalRead(heightSensorPins[8]) == HIGH) sensorTriggered[8] = true;
+      if (digitalRead(heightSensorPins[9]) == HIGH) sensorTriggered[9] = true;
+
+      if (newAxleDetected) {
+        newAxleDetected = false;
+        lastAxleTime = millis();
+        Serial.println("🔄 Additional axle detected, timer reset.");
+      }
+    }
+
+    Serial.print("🕒 Detection duration: ");
+    Serial.println(millis() - detectionStart);
+
+    int highestSensorIndex = -1;
+    Serial.print("📊 Height sensors triggered: ");
+    for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+      if (sensorTriggered[i]) {
+        Serial.print(i);
+        Serial.print(" ");
+        highestSensorIndex = i;
+      }
+    }
+    if (highestSensorIndex == -1) Serial.print("None");
+    Serial.println();
+
+    int vehicleHeight = (highestSensorIndex >= 0) ? heightValues[highestSensorIndex] : 0;
+    String vehicleType = classifyVehicle(axleCount);
+
+    if (vehicleHeight > 0 || axleCount > 0) {
+      Serial.print("✅ Final Output: |AA|");
+      Serial.print(axleCount);
+      Serial.print("|");
+      Serial.print(vehicleType);
+      Serial.print("|");
+      Serial.print(vehicleHeight);
+      Serial.println("|FF|");
+    } else {
+      Serial.println("⚠️ Ignored false trigger (no valid axle/height data)");
+    }
+
+    // Reset
+    axleCount = 0;
+    detectionInProgress = false;
+    cooldownActive = true;
+    Serial.println("⏳ Cooldown...");
+    delay(3000);
+    cooldownActive = false;
+    Serial.println("🚦 System Ready");
+  }
+}
+
+String classifyVehicle(int axles) {
+  switch (axles) {
+    case 1: return "Bike";
+    case 2: return "Car";
+    case 3: return "MiniBus";
+    case 4: return "Bus";
+    case 5: return "Truck";
+    default: return (axles > 5) ? "MultiAxle" : "Unknown";
+  }
+}
