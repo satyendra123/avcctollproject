@@ -1,0 +1,75 @@
+#define AXLE_SENSOR_PIN 2
+#define HEIGHT_SENSOR_COUNT 10
+const int HEIGHT_SENSOR_PINS[HEIGHT_SENSOR_COUNT] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+const int HEIGHT_THRESHOLDS[HEIGHT_SENSOR_COUNT] = {1280, 1400, 1520, 1650, 1780, 1910, 2030, 2400, 2540, 2670};
+
+volatile int axleCount = 0;
+volatile int vehicleCount = 0;
+volatile bool lastAxleState = LOW;
+volatile unsigned long lastAxleTime = 0;
+const int VEHICLE_TIMEOUT = 2000;
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(AXLE_SENSOR_PIN, INPUT);
+    for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+        pinMode(HEIGHT_SENSOR_PINS[i], INPUT);
+    }
+}
+
+void loop() {
+    unsigned long currentTime = millis();
+    int axleSensorState = readSensor(AXLE_SENSOR_PIN);
+    if (axleSensorState == HIGH && lastAxleState == LOW) {  
+        if (axleCount == 0) {
+            vehicleCount++;
+            Serial.print("New Vehicle #");
+            Serial.println(vehicleCount);
+        }
+        axleCount++;
+        Serial.print("Axle detected! Axle Count: ");
+        Serial.println(axleCount);
+        lastAxleTime = currentTime;
+    }
+    lastAxleState = axleSensorState;
+    int vehicleHeight = detectVehicleHeight();
+    if (axleCount > 0 && (currentTime - lastAxleTime) > VEHICLE_TIMEOUT) {
+        vehicleClassification(vehicleHeight);
+        axleCount = 0;
+    }
+}
+
+int detectVehicleHeight() {
+    for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+        if (readSensor(HEIGHT_SENSOR_PINS[i]) == HIGH) {
+            return HEIGHT_THRESHOLDS[i];
+        }
+    }
+    return 0;
+}
+
+void vehicleClassification(int vehicleHeight) {
+    String vehicleType;
+    if (axleCount == 2) {
+        vehicleType = "Car or Small Bus";
+    } else if (axleCount == 3) {
+        vehicleType = "Bus";
+    } else if (axleCount >= 4) {
+        vehicleType = "Truck";
+    } else {
+        vehicleType = "Unknown Vehicle";
+    }
+    Serial.print("Vehicle #");
+    Serial.print(vehicleCount);
+    Serial.print(" - ");
+    Serial.print(vehicleType);
+    Serial.print(" with ");
+    Serial.print(axleCount);
+    Serial.print(" axles and height: ");
+    Serial.print(vehicleHeight);
+    Serial.println(" mm.");
+}
+
+int readSensor(int pin) {
+    return (PIND & (1 << (pin - 2))) ? HIGH :LOW;
+}
