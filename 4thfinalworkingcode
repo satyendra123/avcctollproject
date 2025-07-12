@@ -1,3 +1,4 @@
+// this code also sends the data through the docklight
 #include <SoftwareSerial.h>
 #define AXLE_SENSOR_PIN 2
 #define HEIGHT_SENSOR_COUNT 10
