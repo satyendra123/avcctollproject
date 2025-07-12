@@ -1,6 +1,13 @@
+#include <SoftwareSerial.h>
 #define AXLE_SENSOR_PIN 2
 #define HEIGHT_SENSOR_COUNT 10
 #define AXLE_TIMEOUT_MS 3000
+
+#define RS485_TX A1  // DI
+#define RS485_RX A0  // RO
+#define RS485_CTRL 13  // DE + RE
+
+SoftwareSerial rs485(RS485_RX, RS485_TX);
 
 const int heightSensorPins[HEIGHT_SENSOR_COUNT] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 const int heightValues[HEIGHT_SENSOR_COUNT]     = {1400, 1520, 1650, 1780, 1910, 2030, 2400, 2600, 2800, 3000};
@@ -27,14 +34,14 @@ void countAxle() {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  rs485.begin(9600);
+  digitalWrite(RS485_CTRL, LOW);
   pinMode(AXLE_SENSOR_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(AXLE_SENSOR_PIN), countAxle, RISING);
-
   for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
     pinMode(heightSensorPins[i], INPUT);
   }
-
   Serial.println("System Ready");
 }
 
@@ -120,13 +127,10 @@ void loop() {
     String vehicleType = classifyVehicle(axleCount);
 
     if (vehicleHeight > 0 || axleCount > 0) {
-      Serial.print("Final Output: |AA|");
-      Serial.print(axleCount);
-      Serial.print("|");
-      Serial.print(vehicleType);
-      Serial.print("|");
-      Serial.print(vehicleHeight);
-      Serial.println("|FF|");
+      String payload = "|AA|" + String(axleCount) + "|" + vehicleType + "|" + String(vehicleHeight) + "|FF|";
+      Serial.print("Final Output: ");
+      Serial.println(payload);
+      rs485.println(payload);
     } else {
       Serial.println("Ignored false trigger (no valid axle/height data)");
     }
