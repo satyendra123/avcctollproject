@@ -1,0 +1,171 @@
+#include <SoftwareSerial.h>
+#define AXLE_SENSOR_PIN 2
+#define HEIGHT_SENSOR_COUNT 10
+#define AXLE_TIMEOUT_MS 3000
+
+#define RS485_TX A1  // DI
+#define RS485_RX A0  // RO
+#define RS485_CTRL 13  // DE + RE
+
+SoftwareSerial rs485(RS485_RX, RS485_TX);
+
+const int heightSensorPins[HEIGHT_SENSOR_COUNT] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+const int heightValues[HEIGHT_SENSOR_COUNT]     = {1400, 1520, 1650, 1780, 1910, 2030, 2400, 2600, 2800, 3000};
+
+volatile bool newAxleDetected = false;
+volatile int axleCount = 0;
+
+unsigned long lastAxleTime = 0;
+bool detectionInProgress = false;
+bool cooldownActive = false;
+
+void countAxle() {
+  static unsigned long lastTrigger = 0;
+  unsigned long now = millis();
+
+  if (now - lastTrigger > 150) {
+    if (digitalRead(AXLE_SENSOR_PIN) == HIGH) {
+      axleCount++;
+      newAxleDetected = true;
+      lastAxleTime = now;
+    }
+  }
+  lastTrigger = now;
+}
+
+void setup() {
+  Serial.begin(115200);
+  rs485.begin(9600);
+  digitalWrite(RS485_CTRL, LOW);
+  pinMode(AXLE_SENSOR_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(AXLE_SENSOR_PIN), countAxle, RISING);
+  for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+    pinMode(heightSensorPins[i], INPUT);
+  }
+  Serial.println("System Ready");
+}
+
+void loop() {
+  // Check if any height sensor is triggered
+  bool heightTriggered = false;
+  for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+    if (digitalRead(heightSensorPins[i]) == HIGH) {
+      Serial.print("Sensor is triggered: ");
+      Serial.println(heightSensorPins[i]);
+      heightTriggered = true;
+      break;
+    }
+  }
+
+  // Start detection
+  if (!detectionInProgress && !cooldownActive && (newAxleDetected || heightTriggered)) {
+    Serial.print("Triggered by: ");
+    if (newAxleDetected) Serial.print("Axle ");
+    if (heightTriggered) Serial.print("Height ");
+    Serial.println();
+
+    Serial.println("Starting detection...");
+    detectionInProgress = true;
+    newAxleDetected = false;
+    lastAxleTime = millis();
+  }
+
+  if (detectionInProgress) {
+    int triggeredSensorIndices[HEIGHT_SENSOR_COUNT];
+    int triggeredCount = 0;
+
+    Serial.println("Monitoring sensors...");
+    unsigned long detectionStart = millis();
+
+    while (millis() - lastAxleTime < AXLE_TIMEOUT_MS) {
+      delay(50);  // For signal stability
+
+      for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+        if (digitalRead(heightSensorPins[i]) == HIGH) {
+          // Check if this index was already recorded
+          bool alreadyAdded = false;
+          for (int j = 0; j < triggeredCount; j++) {
+            if (triggeredSensorIndices[j] == i) {
+              alreadyAdded = true;
+              break;
+            }
+          }
+          if (!alreadyAdded && triggeredCount < HEIGHT_SENSOR_COUNT) {
+            triggeredSensorIndices[triggeredCount++] = i;
+            Serial.print("Sensor triggered: ");
+            Serial.println(i);
+          }
+        }
+      }
+
+      if (newAxleDetected) {
+        newAxleDetected = false;
+        lastAxleTime = millis();
+        Serial.println("Additional axle detected, timer reset.");
+      }
+    }
+
+    Serial.print("Detection duration: ");
+    Serial.println(millis() - detectionStart);
+
+    int highestSensorIndex = -1;
+    Serial.print("Height sensors triggered: ");
+    if (triggeredCount == 0) {
+      Serial.print("None");
+    } else {
+      for (int i = 0; i < triggeredCount; i++) {
+        Serial.print(triggeredSensorIndices[i]);
+        Serial.print(" ");
+        if (triggeredSensorIndices[i] > highestSensorIndex) {
+          highestSensorIndex = triggeredSensorIndices[i];
+        }
+      }
+    }
+    Serial.println();
+
+    int vehicleHeight = (highestSensorIndex >= 0) ? heightValues[highestSensorIndex] : 0;
+    String vehicleType = classifyVehicle(axleCount, vehicleHeight);
+
+    if (vehicleHeight > 0 || axleCount > 0) {
+      String payload = "|AA|" + String(axleCount) + "|" + vehicleType + "|" + String(vehicleHeight) + "|FF|";
+      Serial.print("Final Output: ");
+      Serial.println(payload);
+      rs485.println(payload);
+    } else {
+      Serial.println("Ignored false trigger (no valid axle/height data)");
+    }
+
+    // Reset for next detection
+    axleCount = 0;
+    detectionInProgress = false;
+    cooldownActive = true;
+    Serial.println("Cooldown...");
+    delay(3000);
+    cooldownActive = false;
+    Serial.println("System Ready");
+  }
+}
+
+String classifyVehicle(int axles, int height) {
+  if (axles == 1 && height <= 1400)
+    return "Bike";
+
+  if (axles == 2) {
+    if (height <= 1400) return "Car";
+    else if (height <= 1650) return "SUV";
+    else if (height <= 2030) return "MiniBus";
+    else if (height <= 2400) return "Bus";
+    else return "Tractor";
+  }
+
+  if (axles == 3) {
+    if (height <= 2030) return "Bus";
+    else return "Truck";
+  }
+
+  if (axles >= 4)
+    return "MAV";
+
+  return "Unknown";
+}
+
