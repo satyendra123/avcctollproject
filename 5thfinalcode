@@ -148,7 +148,7 @@ void loop() {
 
 String classifyVehicle(int axles, int height) {
   if (axles == 1 && height <= 1400)
-    return "Bike";
+    return "Car";
 
   if (axles == 2) {
     if (height <= 1400) return "Car";
