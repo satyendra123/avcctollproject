@@ -1,0 +1,75 @@
+#define AXLE_SENSOR_PIN 2
+#define HEIGHT_SENSOR_COUNT 10
+#define VEHICLE_TIMEOUT 3000
+
+unsigned long axleCount = 0;
+bool lastAxleState = HIGH;
+
+const int heightSensorPins[HEIGHT_SENSOR_COUNT] = {3,4,5,6,7,8,9,10,11,12};
+const int heightValues[HEIGHT_SENSOR_COUNT]     = {1400,1520,1650,1780,1910,2030,2400,2600,2800,3000};
+
+bool lastHeightState[HEIGHT_SENSOR_COUNT];
+int maxHeight = 0;
+
+unsigned long lastDetectionTime = 0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(AXLE_SENSOR_PIN, INPUT_PULLUP);
+  for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+    pinMode(heightSensorPins[i], INPUT_PULLUP);
+    lastHeightState[i] = HIGH;
+  }
+}
+
+void loop() {
+  bool currentAxleState = digitalRead(AXLE_SENSOR_PIN);
+  if (lastAxleState == HIGH && currentAxleState == LOW) {
+    axleCount++;
+    lastDetectionTime = millis();
+    Serial.print("Axle detected. Count = ");
+    Serial.println(axleCount);
+    delay(30);
+  }
+  lastAxleState = currentAxleState;
+
+  for (int i = 0; i < HEIGHT_SENSOR_COUNT; i++) {
+    bool currentState = digitalRead(heightSensorPins[i]);
+    if (lastHeightState[i] == HIGH && currentState == LOW) {
+      lastDetectionTime = millis();
+      if (heightValues[i] > maxHeight) {
+        maxHeight = heightValues[i];
+      }
+      Serial.print("Height sensor triggered: ");
+      Serial.print(i + 1);
+      Serial.print(" | Height value = ");
+      Serial.println(heightValues[i]);
+      delay(20);
+    }
+    lastHeightState[i] = currentState;
+  }
+
+  if (axleCount > 0 && (millis() - lastDetectionTime > VEHICLE_TIMEOUT)) {
+    classifyVehicle(axleCount, maxHeight);
+    axleCount = 0;
+    maxHeight = 0;
+  }
+}
+
+void classifyVehicle(unsigned long axles, int height) {
+  Serial.println("----- Vehicle Passed -----");
+  Serial.print("Total axles: "); Serial.println(axles);
+  Serial.print("Max height : "); Serial.println(height);
+
+  String type;
+
+  if (axles == 2 && height < 1600) type = "Car";
+  else if (axles == 2 && height >= 1600 && height < 2200) type = "Van/Jeep";
+  else if (axles == 2 && height >= 2200) type = "Bus";
+  else if (axles == 3) type = "Mini-Truck";
+  else if (axles >= 4 && height >= 2500) type = "Heavy Truck";
+  else type = "Unknown";
+
+  Serial.print("Vehicle Type = ");
+  Serial.println(type);
+}
