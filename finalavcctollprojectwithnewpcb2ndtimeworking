@@ -72,7 +72,6 @@ void classifyVehicle(unsigned long axles, int height) {
   else if (axles >= 4 && height >= 2500) type = "Heavy Truck";
   else type = "Unknown";
 
-  // Serial output in requested format
   Serial.print("|AA|");
   Serial.print(axles);
   Serial.print("|");
@@ -81,10 +80,9 @@ void classifyVehicle(unsigned long axles, int height) {
   Serial.print(height);
   Serial.println("|FF|");
 
-  Serial.println("----- Vehicle Passed -----");
-  Serial.print("Total axles: "); Serial.println(axles);
-  Serial.print("Max height: "); Serial.println(height);
-  Serial.print("Vehicle type: "); Serial.println(type);
-  Serial.println();
+  //Serial.println("----- Vehicle Passed -----");
+  //Serial.print("Total axles: "); Serial.println(axles);
+  //Serial.print("Max height: "); Serial.println(height);
+  //Serial.print("Vehicle type: "); Serial.println(type);
+  //Serial.println();
 }
-
