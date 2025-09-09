@@ -1,0 +1,157 @@
+#define VEHICLE_TIMEOUT 3000   // Time in ms to consider vehicle finished
+#define AXLE_DEBOUNCE_MS 200   // Debounce time for axle sensor
+
+volatile unsigned long axleCount = 0;
+volatile unsigned long lastAxleTrigger = 0;
+
+unsigned long vehicleStartTime = 0;
+bool vehicleInProgress = false;
+
+int lastMaxHeight = 0;
+
+// Pins
+#define AXLE_SENSOR_PIN 2
+const int heightSensorPins[10] = {3,4,5,6,7,8,9,10,11,12};
+
+void setup() {
+  // Set axle & height sensor pins as input with pull-up
+  DDRD &= ~(1 << PD2); // Axle sensor
+  DDRD &= ~((1 << PD3)|(1 << PD4)|(1 << PD5)|(1 << PD6)|(1 << PD7));
+  DDRB &= ~((1 << PB0)|(1 << PB1)|(1 << PB2)|(1 << PB3)|(1 << PB4));
+
+  PORTD |= (1 << PD2)|(1 << PD3)|(1 << PD4)|(1 << PD5)|(1 << PD6)|(1 << PD7);
+  PORTB |= (1 << PB0)|(1 << PB1)|(1 << PB2)|(1 << PB3)|(1 << PB4);
+
+  Serial.begin(115200);
+  Serial.println("System Initialized...");
+
+  // Attach interrupt for axle sensor (falling edge)
+  EICRA |= (1 << ISC01);  
+  EIMSK |= (1 << INT0);
+  sei();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // Update max height
+  int maxHeight = getMaxHeight();
+  if (maxHeight > lastMaxHeight) {
+    lastMaxHeight = maxHeight;
+
+    // Start vehicle if first height detected
+    if (!vehicleInProgress) {
+      vehicleInProgress = true;
+      vehicleStartTime = now;
+    }
+  }
+
+  // Start vehicle if first axle detected
+  if (axleCount > 0 && !vehicleInProgress) {
+    vehicleInProgress = true;
+    vehicleStartTime = now;
+  }
+
+  // Check vehicle timeout based on last axle
+  if (vehicleInProgress && (now - lastAxleTrigger > VEHICLE_TIMEOUT)) {
+    int vehicleHeight = levelToHeight(lastMaxHeight);
+    String vehicleType = classifyVehicle(axleCount, vehicleHeight);
+
+    Serial.print("|AA|");
+    Serial.print(axleCount);
+    Serial.print("|");
+    Serial.print(vehicleHeight);
+    Serial.print("|");
+    Serial.print(vehicleType);
+    Serial.println("|FF|");
+
+    // Reset for next vehicle
+    axleCount = 0;
+    lastMaxHeight = 0;
+    vehicleInProgress = false;
+  }
+}
+
+// Axle ISR with debounce
+ISR(INT0_vect) {
+  unsigned long now = millis();
+  if (now - lastAxleTrigger > AXLE_DEBOUNCE_MS) {
+    axleCount++;
+    Serial.print("Axle detected -> Count: ");
+    Serial.println(axleCount);
+
+    if (!vehicleInProgress) {
+      vehicleInProgress = true;
+      vehicleStartTime = now;
+    }
+
+    lastAxleTrigger = now;
+  }
+}
+
+// Read maximum height from sensors
+int getMaxHeight() {
+  int maxHeight = 0;
+
+  uint8_t portD = PIND;
+  for (int i = 3; i <= 7; i++) {
+    if (!(portD & (1 << i))) {
+      int level = i - 2;
+      if (level > maxHeight) maxHeight = level;
+    }
+  }
+
+  uint8_t portB = PINB;
+  for (int i = 0; i <= 4; i++) {
+    if (!(portB & (1 << i))) {
+      int level = i + 6;
+      if (level > maxHeight) maxHeight = level;
+    }
+  }
+
+  return maxHeight;
+}
+
+// Convert level to height in mm
+int levelToHeight(int level) {
+  static const int heightMap[11] = {
+    0, 1400, 1520, 1650, 1780, 1910,
+    2030, 2150, 2280, 2400, 2550
+  };
+  if (level >= 1 && level <= 10) return heightMap[level];
+  return 0;
+}
+
+// Classify vehicle based on axles and height
+String classifyVehicle(int axles, int height) {
+  if (axles == 0 && height > 0) {
+    if (height <= 1400) return "Car?";
+    else if (height <= 1650) return "SUV?";
+    else if (height <= 2030) return "MiniBus?";
+    else if (height <= 2400) return "Bus?";
+    else return "Tall Vehicle?";
+  }
+
+  if (axles > 0 && height == 0) {
+    if (axles == 1) return "Bike/Car?";
+    else if (axles == 2) return "Car/Van?";
+    else if (axles == 3) return "Truck?";
+    else return "MAV?";
+  }
+
+  if (axles == 1 && height <= 1400) return "Car";
+  if (axles == 2) {
+    if (height <= 1400) return "Car";
+    else if (height <= 1650) return "SUV";
+    else if (height <= 2030) return "MiniBus";
+    else if (height <= 2400) return "Bus";
+    else return "Tractor";
+  }
+  if (axles == 3) {
+    if (height <= 2030) return "Bus";
+    else return "Truck";
+  }
+  if (axles >= 4) return "MAV";
+
+  return "Unknown";
+}
