@@ -1,12 +1,6 @@
-// =======================
-// Vehicle Axle + Height Counter (Bare Metal AVR)
-// =======================
+#define VEHICLE_TIMEOUT   2000
+#define AXLE_DEBOUNCE_MS   200
 
-// Constants
-#define VEHICLE_TIMEOUT   2000   // ms: no activity = vehicle finished
-#define AXLE_DEBOUNCE_MS   200   // ms: debounce for axle sensor
-
-// State variables
 volatile unsigned long axleCount = 0;
 volatile unsigned long lastAxleTrigger = 0;
 
@@ -14,15 +8,14 @@ unsigned long vehicleStartTime = 0;
 unsigned long lastActivityTime = 0;
 bool vehicleInProgress = false;
 
-// Height tracking
-bool heightTriggered[11] = {false};   // index = level (1..10)
+bool heightTriggered[11] = {false};
 
 // Pins
 #define AXLE_SENSOR_PIN 2
 const int heightSensorPins[10] = {3,4,5,6,7,8,9,10,11,12};
 
 void setup() {
-  // Axle sensor input (PD2)
+  // Axle sensor input (PD2 / INT0)
   DDRD &= ~(1 << PD2); 
   PORTD |= (1 << PD2);   // enable pull-up
 
@@ -50,36 +43,19 @@ void loop() {
 
   // Vehicle finished condition
   if (vehicleInProgress && (now - lastActivityTime > VEHICLE_TIMEOUT)) {
-    // Compute max height level from triggered sensors
-    int maxLevel = 0;
-    for (int i = 1; i <= 10; i++) {
-      if (heightTriggered[i] && i > maxLevel) {
-        maxLevel = i;
+    if (axleCount == 0) {
+      // Height triggered but no axle yet → wait one more timeout window
+      if (now - vehicleStartTime < (2 * VEHICLE_TIMEOUT)) {
+        return; // keep waiting
       }
     }
-
-    int vehicleHeight = levelToHeight(maxLevel);
-    String vehicleType = classifyVehicle(axleCount, vehicleHeight);
-
-    // Output result
-    Serial.print("|AA|");
-    Serial.print(axleCount);
-    Serial.print("|");
-    Serial.print(vehicleHeight);
-    Serial.print("|");
-    Serial.print(vehicleType);
-    Serial.println("|FF|");
-
-    // Reset state for next vehicle
-    axleCount = 0;
-    vehicleInProgress = false;
-    vehicleStartTime = 0;
-    lastActivityTime = 0;
-    memset(heightTriggered, 0, sizeof(heightTriggered));
+    finalizeVehicle();
   }
 }
 
+// =======================
 // Axle sensor interrupt
+// =======================
 ISR(INT0_vect) {
   unsigned long now = millis();
   if (now - lastAxleTrigger > AXLE_DEBOUNCE_MS) {
@@ -97,7 +73,9 @@ ISR(INT0_vect) {
   }
 }
 
-// Record all triggered height sensors
+// =======================
+// Height sensor scanner
+// =======================
 void updateHeightSensors() {
   uint8_t portD = PIND;
   for (int i = 3; i <= 7; i++) {
@@ -126,7 +104,43 @@ void updateHeightSensors() {
   }
 }
 
-// Map level → mm height
+// =======================
+// Finalize vehicle detection
+// =======================
+void finalizeVehicle() {
+  // Compute max height
+  int maxLevel = 0;
+  for (int i = 1; i <= 10; i++) {
+    if (heightTriggered[i] && i > maxLevel) {
+      maxLevel = i;
+    }
+  }
+  int vehicleHeight = levelToHeight(maxLevel);
+
+  // Classify
+  String vehicleType = classifyVehicle(axleCount, vehicleHeight);
+
+  // Output
+  Serial.print("|AA|");
+  Serial.print(axleCount);
+  Serial.print("|");
+  Serial.print(vehicleHeight);
+  Serial.print("|");
+  Serial.print(vehicleType);
+  Serial.println("|FF|");
+
+  // Reset state
+  axleCount = 0;
+  vehicleInProgress = false;
+  vehicleStartTime = 0;
+  lastActivityTime = 0;
+  memset(heightTriggered, 0, sizeof(heightTriggered));
+
+  while ((PIND & (1 << PD2)) == 0) {
+    delay(5);
+  }
+}
+
 int levelToHeight(int level) {
   static const int heightMap[11] = {
     0, 1400, 1520, 1650, 1780, 1910,
@@ -136,24 +150,30 @@ int levelToHeight(int level) {
   return 0;
 }
 
-// Vehicle classification logic
 String classifyVehicle(int axles, int height) {
+  // Case: no axles but height detected
   if (axles == 0 && height > 0) {
-    if (height <= 1400) return "Car";
-    else if (height <= 1650) return "SUV";
-    else if (height <= 2030) return "MiniBus";
-    else if (height <= 2400) return "Bus";
+    if (height <= 1400) return "Car?";
+    else if (height <= 1650) return "SUV?";
+    else if (height <= 2030) return "MiniBus?";
+    else if (height <= 2400) return "Bus?";
     else return "Tall Vehicle?";
   }
 
+  // Case: axle(s) but no height
   if (axles > 0 && height == 0) {
-    if (axles == 1) return "Bike/Car";
-    else if (axles == 2) return "Car/Van";
-    else if (axles == 3) return "Truck";
+    if (axles == 1) return "Bike/Car?";
+    else if (axles == 2) return "Car/Van?";
+    else if (axles == 3) return "Truck?";
     else return "MAV?";
   }
 
-  if (axles == 1 && height <= 1400) return "Car";
+  // Axle + height combinations
+  if (axles == 1) {
+    if (height <= 1400) return "Car";
+    else if (height <= 1650) return "SUV";
+    else return "MiniBus";
+  }
   if (axles == 2) {
     if (height <= 1400) return "Car";
     else if (height <= 1650) return "SUV";
