@@ -139,17 +139,17 @@ int levelToHeight(int level) {
 // Vehicle classification logic
 String classifyVehicle(int axles, int height) {
   if (axles == 0 && height > 0) {
-    if (height <= 1400) return "Car?";
-    else if (height <= 1650) return "SUV?";
-    else if (height <= 2030) return "MiniBus?";
-    else if (height <= 2400) return "Bus?";
+    if (height <= 1400) return "Car";
+    else if (height <= 1650) return "SUV";
+    else if (height <= 2030) return "MiniBus";
+    else if (height <= 2400) return "Bus";
     else return "Tall Vehicle?";
   }
 
   if (axles > 0 && height == 0) {
-    if (axles == 1) return "Bike/Car?";
-    else if (axles == 2) return "Car/Van?";
-    else if (axles == 3) return "Truck?";
+    if (axles == 1) return "Bike/Car";
+    else if (axles == 2) return "Car/Van";
+    else if (axles == 3) return "Truck";
     else return "MAV?";
   }
 
