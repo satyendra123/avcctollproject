@@ -1,4 +1,4 @@
-
+/*
 const int heightSensorPins[10] = {4,5,6,7,8,9,10,11,12};
 int lastState[10];  // store last state of each pin
 
@@ -26,5 +26,52 @@ void loop() {
       lastState[i] = state;
     }
   }
+}
+*/
+
+EX-2 find the maximum height sensor triggered
+const int heightSensorPins[10] = {4,5,6,7,8,9,10,11,12};
+int lastState[10];
+
+const unsigned long TIME_WINDOW = 5000;
+
+void setup() {
+  Serial.begin(115200);
+  for (int i = 0; i < 10; i++) {
+    pinMode(heightSensorPins[i], INPUT_PULLUP);
+    lastState[i] = digitalRead(heightSensorPins[i]);
+  }
+  Serial.println("Height sensor max detection test...");
+}
+
+void loop() {
+  unsigned long startTime = millis();
+  bool triggered[10] = {false};
+
+  while (millis() - startTime < TIME_WINDOW) {
+    for (int i = 0; i < 10; i++) {
+      int pin = heightSensorPins[i];
+      int state = digitalRead(pin);
+      if (state == LOW) {
+        triggered[i] = true;
+      }
+    }
+  }
+
+  int maxSensor = -1;
+  for (int i = 0; i < 10; i++) {
+    if (triggered[i]) {
+      maxSensor = heightSensorPins[i];
+    }
+  }
+
+  if (maxSensor != -1) {
+    Serial.print("Max height sensor triggered: D");
+    Serial.println(maxSensor);
+  } else {
+    //Serial.println("No sensor triggered in this window");
+  }
+
+  delay(100);
 }
 
