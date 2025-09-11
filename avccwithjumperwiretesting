@@ -75,3 +75,82 @@ void loop() {
   delay(100);
 }
 
+#EX-3 tells me the axle count and the max height in the 5s window
+const int axleSensorPin = 4; // Any digital pin
+const int heightSensorPins[8] = {5,6,7,8,9,10,11,12};
+
+const unsigned long AXLE_DEBOUNCE_MS = 200;
+const unsigned long WINDOW_MS = 5000; // 3 seconds
+
+unsigned long lastAxleTime = 0;
+int lastAxleState = HIGH;
+
+unsigned long windowStart = 0;
+int axleCountInWindow = 0;
+bool heightTriggered[8] = {false};
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(axleSensorPin, INPUT_PULLUP); // Assuming sensor connects to GND when triggered
+  for (int i = 0; i < 8; i++) {
+    pinMode(heightSensorPins[i], INPUT_PULLUP);
+  }
+
+  windowStart = millis(); // start first window
+  Serial.println("Axle + Height sensor test started...");
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // -----------------------
+  // 1. Axle counting
+  // -----------------------
+  int axleState = digitalRead(axleSensorPin);
+  if (lastAxleState == HIGH && axleState == LOW) { // falling edge
+    if (now - lastAxleTime > AXLE_DEBOUNCE_MS) {
+      axleCountInWindow++;
+      lastAxleTime = now;
+    }
+  }
+  lastAxleState = axleState;
+
+  // -----------------------
+  // 2. Height sensor check
+  // -----------------------
+  for (int i = 0; i < 8; i++) {
+    if (digitalRead(heightSensorPins[i]) == LOW) {
+      heightTriggered[i] = true;
+    }
+  }
+
+  // -----------------------
+  // 3. Check if 3-second window ended
+  // -----------------------
+  if (now - windowStart >= WINDOW_MS) {
+    // Find the max triggered height sensor
+    int maxSensor = -1;
+    for (int i = 0; i < 8; i++) {
+      if (heightTriggered[i]) {
+        maxSensor = heightSensorPins[i];
+      }
+    }
+
+    Serial.print("Axles in last 3s: ");
+    Serial.println(axleCountInWindow);
+
+    if (maxSensor != -1) {
+      Serial.print("Max height sensor triggered: D");
+      Serial.println(maxSensor);
+    } else {
+      Serial.println("No height sensor triggered");
+    }
+
+    // Reset for next window
+    axleCountInWindow = 0;
+    for (int i = 0; i < 8; i++) heightTriggered[i] = false;
+    windowStart = now;
+  }
+}
+
