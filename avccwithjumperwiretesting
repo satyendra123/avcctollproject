@@ -1,0 +1,30 @@
+
+const int heightSensorPins[10] = {4,5,6,7,8,9,10,11,12};
+int lastState[10];  // store last state of each pin
+
+void setup() {
+  Serial.begin(115200);
+  for (int i = 0; i < 10; i++) {
+    pinMode(heightSensorPins[i], INPUT_PULLUP);
+    lastState[i] = digitalRead(heightSensorPins[i]);
+  }
+  Serial.println("Height sensor change-detection test...");
+}
+
+void loop() {
+  for (int i = 0; i < 10; i++) {
+    int pin = heightSensorPins[i];
+    int state = digitalRead(pin);
+
+    if (state != lastState[i]) {
+      Serial.print("Pin D");
+      Serial.print(pin);
+      Serial.print(" changed -> ");
+      if (state == LOW) Serial.println("TRIGGERED (LOW)");
+      else Serial.println("RELEASED (HIGH)");
+
+      lastState[i] = state;
+    }
+  }
+}
+
